@@ -1,6 +1,9 @@
 use std::env;
+use std::fmt::format;
 use std::fs;
 use std::io;
+use std::io::Read;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
@@ -27,9 +30,9 @@ fn main() {
     // let java_home = env::var("JAVA_HOME");
     // println!("cargo:warning=GRAALVM_HOME: {:?}", graal_home);
     // println!("cargo:warning=JAVA_HOME: {:?}", java_home);
-    //println!("cargo:warning=dist_dir: {}", dist_dir.display());
-    //println!("cargo:warning=out_dir: {}", out_dir.display());
-    //println!("cargo:warning=tika_native_dir: {:?}", tika_native_dir);
+    // println!("cargo:warning=dist_dir: {}", dist_dir.display());
+    // println!("cargo:warning=out_dir: {}", out_dir.display());
+    // println!("cargo:warning=tika_native_dir: {:?}", tika_native_dir);
     let tika_native_dir = out_dir.join("tika-native");
     let mut need_build = false;
     if is_dir_updated(&tika_native_source_dir, &tika_native_dir) {
@@ -51,7 +54,9 @@ fn main() {
                 copy_build_artifacts(&libs_dir, vec![&libs_out_dir], false);
             }
         }
-        None => { need_build = true; }
+        None => {
+            need_build = true;
+        }
     }
 
     // Launch the gradle build
@@ -175,6 +180,35 @@ fn gradle_build(
         tika_native_dir.join("gradlew")
     };
 
+    // Add variable distribution url
+    if env::var("CARGO_FEATURE_GRADLE_TENCENT_MIRROR").is_ok() {
+        let wrapper_config = tika_native_dir
+            .join("gradle")
+            .join("wrapper")
+            .join("gradle-wrapper.properties");
+        let mut f =
+            std::fs::File::options().read(true).create(false).open(&wrapper_config).expect("Failed to open wrapper properties file.");
+        let mut content = Vec::new();
+        f.read_to_end(&mut content)
+            .expect("Failed to read wrapper propertires file.");
+
+        let mirrored = String::from_utf8(content)
+            .expect("Failed to decode wrapper propertires file.")
+            .replace(
+                "services.gradle.org/distributions",
+                "mirrors.cloud.tencent.com/gradle",
+            );
+        drop(f);
+        let mut f = std::fs::File::options()
+            .truncate(true)
+            .write(true)
+            .open(&wrapper_config)
+            .expect("Failed to open wrapper properties file.");
+        f.write(mirrored.as_bytes())
+            .expect("Failed to write wrapper propertires file.");
+        println!("Successfully setup gradle mirror");
+    }
+
     // Launch the gradle build
     Command::new(gradlew)
         .current_dir(&tika_native_dir)
@@ -204,9 +238,11 @@ pub fn copy_build_artifacts(from_path: &PathBuf, copy_to_dirs: Vec<&PathBuf>, cl
     // Copy the build artifacts to the specified directories
     let mut options = fs_extra::dir::CopyOptions::new();
     options.overwrite = true;
-    // options.content_only = true;
+    println!("{:?} copy to {:?}", from_path, copy_to_dirs);
+    options.content_only = true;
 
     for dir in copy_to_dirs.iter() {
+        fs_extra::dir::create(dir, true).expect("Failed to create OUTPUT_DIR");
         fs_extra::dir::copy(from_path, dir, &options)
             .expect("Failed to copy build artifacts to OUTPUT_DIR");
 
