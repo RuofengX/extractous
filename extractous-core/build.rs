@@ -204,7 +204,7 @@ pub fn copy_build_artifacts(from_path: &PathBuf, copy_to_dirs: Vec<&PathBuf>, cl
     // Copy the build artifacts to the specified directories
     let mut options = fs_extra::dir::CopyOptions::new();
     options.overwrite = true;
-    options.content_only = true;
+    // options.content_only = true;
 
     for dir in copy_to_dirs.iter() {
         fs_extra::dir::copy(from_path, dir, &options)
